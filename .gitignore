@@ -1,0 +1,42 @@
+﻿.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+logs/*.log
+data/*
+!data/.gitkeep
+reports/*
+!reports/.gitkeep
+.env
+*.db
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+.env.*
+!.env.example
+
+# Local databases and runtime data
+*.db
+*.sqlite
+*.sqlite3
+logs/
+
+# Temporary development patch scripts
+/apply_analytics_patch.py
+/apply_incident_patch.py
+/apply_phase3_dashboard.py
+/apply_rolling_integration.py
+/apply_sqlite_integration.py
+
+# Local backup copies of source files
+*.bak
+*.backup
+*.analytics-backup
+*.incident-backup
+*.incident-backup-*
+*.persistence-backup
+*.phase3-backup
+*.pre-rolling-integration
+*.sqlite-backup-*
+
