@@ -1,4 +1,5 @@
 ﻿import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,7 @@ class IncidentStore:
         return connection
 
     def _initialize(self):
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS incidents (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,6 +44,24 @@ class IncidentStore:
                 CREATE INDEX IF NOT EXISTS idx_incidents_severity
                 ON incidents(severity)
             """)
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS incident_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    incident_key TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    old_status TEXT,
+                    new_status TEXT,
+                    details TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT
+                        (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                    FOREIGN KEY (incident_key)
+                        REFERENCES incidents(incident_key)
+                )
+            """)
+            connection.execute("""
+                CREATE INDEX IF NOT EXISTS idx_incident_audit_key
+                ON incident_audit(incident_key, id DESC)
+            """)
 
     @staticmethod
     def _value(value: Any) -> str | None:
@@ -50,7 +69,7 @@ class IncidentStore:
 
     def save_alert(self, alert, incident_key: str) -> bool:
         """Save an alert once. Returns True for a new record."""
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             cursor = connection.execute("""
                 INSERT OR IGNORE INTO incidents (
                     incident_key, timestamp, rule_id, severity,
@@ -66,28 +85,83 @@ class IncidentStore:
                 self._value(getattr(alert, "observed_value", None)),
                 self._value(getattr(alert, "threshold", None)),
             ))
-            return cursor.rowcount == 1
+            if cursor.rowcount == 1:
+                connection.execute("""
+                    INSERT INTO incident_audit (
+                        incident_key, action, new_status, details
+                    ) VALUES (?, 'Incident created', 'New', 'Alert persisted')
+                """, (incident_key,))
+                return True
+            return False
 
     def update_metadata(
         self, incident_key: str, status: str, notes: str
     ) -> bool:
+        """Update investigation metadata and audit actual changes."""
         if status not in {"New", "Investigating", "Resolved"}:
             raise ValueError("Unsupported incident status.")
 
-        with self._connect() as connection:
-            cursor = connection.execute("""
+        notes = str(notes)
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute("""
+                SELECT status, notes
+                FROM incidents
+                WHERE incident_key = ?
+            """, (incident_key,)).fetchone()
+
+            if row is None:
+                return False
+
+            old_status = row["status"]
+            old_notes = row["notes"]
+
+            if old_status == status and old_notes == notes:
+                return True
+
+            connection.execute("""
                 UPDATE incidents
                 SET status = ?, notes = ?
                 WHERE incident_key = ?
             """, (status, notes, incident_key))
-            return cursor.rowcount == 1
+
+            changes = []
+            if old_status != status:
+                changes.append(f"Status changed: {old_status} -> {status}")
+            if old_notes != notes:
+                changes.append("Investigation notes updated")
+
+            connection.execute("""
+                INSERT INTO incident_audit (
+                    incident_key, action, old_status, new_status, details
+                ) VALUES (?, 'Investigation updated', ?, ?, ?)
+            """, (incident_key, old_status, status, "; ".join(changes)))
+
+            return True
+
+    def get_audit_history(
+        self, incident_key: str, limit: int = 100
+    ) -> list[dict]:
+        """Return recent audit entries for one incident."""
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute("""
+                SELECT id, incident_key, action, old_status, new_status,
+                       details, created_at
+                FROM incident_audit
+                WHERE incident_key = ?
+                ORDER BY id DESC
+                LIMIT ?
+            """, (incident_key, limit)).fetchall()
+            return [dict(row) for row in rows]
 
     def get_recent(self, limit: int = 100) -> list[dict]:
         """Return the newest incidents first."""
         if limit < 1:
             raise ValueError("limit must be at least 1")
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute("""
                 SELECT incident_key, timestamp, rule_id, severity,
                        title, reason, observed_value, threshold,
@@ -99,7 +173,7 @@ class IncidentStore:
             return [dict(row) for row in rows]
 
     def count(self) -> int:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             return int(
                 connection.execute(
                     "SELECT COUNT(*) FROM incidents"

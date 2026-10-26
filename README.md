@@ -118,3 +118,18 @@ VONKA SENTINEL-X is developed as a cybersecurity learning and portfolio project 
 ## License
 
 No license has been selected yet. Unless a license is added, reuse and redistribution are not automatically granted.
+
+## Architecture and Safe Demonstration
+
+- [System Architecture](docs/ARCHITECTURE.md) — components, data flow, and security boundaries.
+- [Safe Demo Guide](docs/SAFE_DEMO.md) — authorized monitoring, detection demonstrations, and portfolio evidence.
+
+## Testing
+
+Run the automated test suite from the project root:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest .\tests -q
+```
+
+A passing test suite does not by itself prove that the system detects every real-world DDoS attack.

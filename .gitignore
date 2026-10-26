@@ -40,3 +40,18 @@ logs/
 *.pre-rolling-integration
 *.sqlite-backup-*
 
+
+# VONKA SENTINEL-X public release hygiene
+*.backup*
+*.bak
+*.before-*.py
+*.upgrade5_*
+*.audit-ui-backup_*
+apply_advanced_analytics.py
+apply_*_patch.py
+apply_rolling_integration.py
+apply_sqlite_integration.py
+*.log
+.env
+.env.*
+!.env.example
